@@ -3,11 +3,16 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"log"
+	"math"
+	"net/http"
+	"strconv"
+	"time"
+
 	"gobot.io/x/gobot"
 	"gobot.io/x/gobot/drivers/gpio"
 	"gobot.io/x/gobot/platforms/raspi"
-	"log"
-	"time"
 )
 
 type arrayFlags []string
@@ -83,24 +88,51 @@ func main() {
 						value += out.Value
 					}
 				}
-				payment = Payment{Value: value, Type: "lightning"}
+				payment = Payment{Value: value, Type: "bitcoin"}
+				log.Println("Payment is sent. ", payment)
 
-				dispense := time.Duration(payment.Value/2) * time.Millisecond
+				//				dispense := time.Duration(payment.Value/2) * time.Millisecond
+
+				client := &http.Client{}
+				//1 cents to BTC
+				req, _ := http.NewRequest("GET", "https://blockchain.info/tobtc?currency=USD&value=0.01", nil)
+				resp, err := client.Do(req)
+				if err != nil {
+					fmt.Println("Errored when sending request to the server")
+					return
+				}
+				defer resp.Body.Close()
+				respbody, _ := ioutil.ReadAll(resp.Body)
+				fmt.Println(resp.Status)
+				fmt.Println(string(respbody))
+				v := string(respbody)
+				//	value := 0.0001 //40 cents in BTC
+				//				value := 10000.0 //40 cents in satoshi
+				dispense := *initialDispense
+				if s, err := strconv.ParseFloat(v, 32); err == nil {
+					fmt.Printf("%T, %v\n", s, s)
+					fmt.Println(float64(value) / math.Pow10(8) / s / 40) // 40cent = 10 M&M
+					howMany := float64(value) / math.Pow10(8) / s / 40
+					dispense = *initialDispense * time.Duration(howMany)
+				}
 
 				log.Println("Dispensing for a duration of", dispense)
 
 				motorPin.On()
 				time.Sleep(dispense)
+				//				time.Sleep(*initialDispense)
 				motorPin.Off()
 			case invoice := <-invoices:
-				payment = Payment{Value: invoice.Value, Type: "bitcoin"}
+				payment = Payment{Value: invoice.Value, Type: "lightning"}
+				log.Println("Payment is sent. ", payment)
 
-				dispense := time.Duration(payment.Value/2) * time.Millisecond
+				//				dispense := time.Duration(payment.Value/2) * time.Millisecond
 
-				log.Println("Dispensing for a duration of", dispense)
+				log.Println("Dispensing for a duration of", *initialDispense)
 
 				motorPin.On()
-				time.Sleep(dispense)
+				//				time.Sleep(dispense)
+				time.Sleep(*initialDispense)
 				motorPin.Off()
 			}
 		}
